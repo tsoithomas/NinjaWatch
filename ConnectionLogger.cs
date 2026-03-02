@@ -192,7 +192,7 @@ public sealed class ConnectionLogger
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine(
-            $"[ALERT] {DateTime.Now:HH:mm:ss}  {processName} (PID {pid})  " +
+            $"[ALERT]  {DateTime.Now:HH:mm:ss}  {processName} (PID {pid})  " +
             $"{conn.LocalEndpoint} → {conn.RemoteEndpoint}  [{conn.State.ToString().ToUpperInvariant()}]");
         Console.ResetColor();
     }
@@ -201,7 +201,7 @@ public sealed class ConnectionLogger
     {
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine(
-            $"[DATA]  {DateTime.Now:HH:mm:ss}  {processName} (PID {pid})  " +
+            $"[DATA]   {DateTime.Now:HH:mm:ss}  {processName} (PID {pid})  " +
             $"{conn.RemoteEndpoint}  " +
             $"↓ +{FormatBytes(conn.DeltaBytesIn ?? 0)}  ↑ +{FormatBytes(conn.DeltaBytesOut ?? 0)}  " +
             $"(total ↓ {FormatBytes(conn.TotalBytesIn ?? 0)}  ↑ {FormatBytes(conn.TotalBytesOut ?? 0)})");
@@ -219,7 +219,7 @@ public sealed class ConnectionLogger
             catch (Exception ex)
             {
                 // Don't crash the monitor if the log file is temporarily locked.
-                Console.Error.WriteLine($"[WARN] Could not write to log file '{_config.LogFilePath}': {ex.Message}");
+                Console.Error.WriteLine($"[WARN]   Could not write to log file '{_config.LogFilePath}': {ex.Message}");
             }
         }
     }
