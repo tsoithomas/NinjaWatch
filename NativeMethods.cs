@@ -215,6 +215,13 @@ internal static class NativeMethods
             if (result != 0) return false;
 
             var rod  = Marshal.PtrToStructure<TCP_ESTATS_DATA_ROD_v0>(rodPtr);
+
+            // Windows returns ulong.MaxValue as a sentinel when collection was never
+            // enabled for this connection (e.g. SetPerTcpConnectionEStats was not
+            // called or failed).  Treat these as "no data".
+            if (rod.DataBytesIn == ulong.MaxValue || rod.DataBytesOut == ulong.MaxValue)
+                return false;
+
             bytesIn  = rod.DataBytesIn;
             bytesOut = rod.DataBytesOut;
             return true;

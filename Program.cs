@@ -1,9 +1,15 @@
 ﻿using System.Security.Principal;
+using System.Text;
 using System.Text.Json;
 using NinjaWatch;
 
 // ---------------------------------------------------------------------------
-// 0. Elevation check — warn but continue if not running as administrator
+// 0. Ensure Unicode symbols (↓ ↑ →) render correctly in any console host.
+// ---------------------------------------------------------------------------
+Console.OutputEncoding = Encoding.UTF8;
+
+// ---------------------------------------------------------------------------
+// 1. Elevation check — warn but continue if not running as administrator
 // ---------------------------------------------------------------------------
 WarnIfNotElevated();
 

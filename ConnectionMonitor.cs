@@ -30,7 +30,8 @@ public sealed class ConnectionMonitor
         int      Pid,
         ulong    TotalBytesIn,
         ulong    TotalBytesOut,
-        DateTime FirstSeen);
+        DateTime FirstSeen,
+        bool     TrackingEnabled);  // false when SetPerTcpConnectionEStats failed (e.g. not elevated)
 
     public ConnectionMonitor(AppConfig config, ConnectionLogger logger)
     {
@@ -131,14 +132,15 @@ public sealed class ConnectionMonitor
                 // ── New connection ──────────────────────────────────────────
                 if (_config.EnableByteTracking)
                 {
-                    NativeMethods.TryEnableBytesTracking(conn);
+                    bool enabled = NativeMethods.TryEnableBytesTracking(conn);
                     _byteSnapshots[sig] = new ByteSnapshot(
-                        processName, conn.OwningPid, 0, 0, DateTime.Now);
+                        processName, conn.OwningPid, 0, 0, DateTime.Now, enabled);
                 }
                 _logger.LogConnection(processName, conn.OwningPid, conn);
             }
             else if (_config.EnableByteTracking &&
-                     _byteSnapshots.TryGetValue(sig, out ByteSnapshot? snap))
+                     _byteSnapshots.TryGetValue(sig, out ByteSnapshot? snap) &&
+                     snap.TrackingEnabled)
             {
                 // ── Existing connection — measure bytes moved this interval ─
                 if (NativeMethods.TryGetConnectionBytes(conn, out ulong bytesIn, out ulong bytesOut))
