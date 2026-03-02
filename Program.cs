@@ -31,8 +31,14 @@ Console.CancelKeyPress += (_, e) =>
     cts.Cancel();
 };
 
-// Also handle SIGTERM (e.g. when stopped as a Windows Service wrapper)
-AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
+// Also handle SIGTERM (e.g. when stopped as a Windows Service wrapper).
+// Guard against ObjectDisposedException: if CTRL+C already ran, the using block
+// will have disposed cts before ProcessExit fires during normal shutdown.
+AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+{
+    if (!cts.IsCancellationRequested)
+        try { cts.Cancel(); } catch (ObjectDisposedException) { }
+};
 
 // ---------------------------------------------------------------------------
 // 4. Run

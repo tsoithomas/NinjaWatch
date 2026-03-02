@@ -19,6 +19,19 @@ public sealed class ConnectionMonitor
     // Used to suppress duplicate log entries for persistent connections.
     private readonly HashSet<string> _seenSignatures = new();
 
+    // Byte-transfer snapshot per connection signature.
+    // Stores the cumulative byte counts from the previous poll so we can
+    // compute per-interval deltas.
+    private readonly Dictionary<string, ByteSnapshot> _byteSnapshots = new();
+
+    // Immutable snapshot stored between polls.
+    private sealed record ByteSnapshot(
+        string   ProcessName,
+        int      Pid,
+        ulong    TotalBytesIn,
+        ulong    TotalBytesOut,
+        DateTime FirstSeen);
+
     public ConnectionMonitor(AppConfig config, ConnectionLogger logger)
     {
         _config = config;
@@ -80,7 +93,9 @@ public sealed class ConnectionMonitor
 
         if (ninjaPids.Count == 0)
         {
-            // Process not running — clear state so connections are re-logged if it restarts.
+            // Process not running — flush any open byte snapshots and reset state.
+            if (_config.EnableByteTracking)
+                LogAndClearAllSnapshots();
             _seenSignatures.Clear();
             return;
         }
@@ -97,12 +112,11 @@ public sealed class ConnectionMonitor
             return;
         }
 
-        // 3. Match connections to NinjaOne PIDs and log new ones.
+        // 3. Match connections to NinjaOne PIDs; log new ones and byte deltas.
         var currentSignatures = new HashSet<string>();
 
         foreach (TcpConnectionInfo conn in connections)
         {
-            // Only report connections in the target states.
             if (conn.State is not (TcpState.Established or TcpState.SynSent or TcpState.TimeWait))
                 continue;
 
@@ -112,14 +126,71 @@ public sealed class ConnectionMonitor
             string sig = conn.Signature;
             currentSignatures.Add(sig);
 
-            if (_seenSignatures.Add(sig))          // Add returns false if already present.
+            if (_seenSignatures.Add(sig))
             {
+                // ── New connection ──────────────────────────────────────────
+                if (_config.EnableByteTracking)
+                {
+                    NativeMethods.TryEnableBytesTracking(conn);
+                    _byteSnapshots[sig] = new ByteSnapshot(
+                        processName, conn.OwningPid, 0, 0, DateTime.Now);
+                }
                 _logger.LogConnection(processName, conn.OwningPid, conn);
+            }
+            else if (_config.EnableByteTracking &&
+                     _byteSnapshots.TryGetValue(sig, out ByteSnapshot? snap))
+            {
+                // ── Existing connection — measure bytes moved this interval ─
+                if (NativeMethods.TryGetConnectionBytes(conn, out ulong bytesIn, out ulong bytesOut))
+                {
+                    // Guard against counter resets (connection briefly disappeared).
+                    ulong deltaIn  = bytesIn  >= snap.TotalBytesIn  ? bytesIn  - snap.TotalBytesIn  : bytesIn;
+                    ulong deltaOut = bytesOut >= snap.TotalBytesOut ? bytesOut - snap.TotalBytesOut : bytesOut;
+
+                    conn.DeltaBytesIn  = deltaIn;
+                    conn.DeltaBytesOut = deltaOut;
+                    conn.TotalBytesIn  = bytesIn;
+                    conn.TotalBytesOut = bytesOut;
+
+                    if (deltaIn > 0 || deltaOut > 0)
+                        _logger.LogByteTransfer(processName, conn.OwningPid, conn);
+
+                    _byteSnapshots[sig] = snap with
+                    {
+                        TotalBytesIn  = bytesIn,
+                        TotalBytesOut = bytesOut
+                    };
+                }
             }
         }
 
-        // 4. Prune signatures that are no longer active so they can be re-logged if reopened.
+        // 4. Log connections that disappeared since the last poll.
+        if (_config.EnableByteTracking)
+        {
+            foreach (string closed in _seenSignatures.Where(s => !currentSignatures.Contains(s)))
+            {
+                if (_byteSnapshots.Remove(closed, out ByteSnapshot? snap))
+                    _logger.LogConnectionClosed(
+                        snap.ProcessName, snap.Pid, closed,
+                        snap.TotalBytesIn, snap.TotalBytesOut, snap.FirstSeen);
+            }
+        }
+
+        // 5. Prune seen set so closed connections can be re-logged if they reopen.
         _seenSignatures.IntersectWith(currentSignatures);
+    }
+
+    /// <summary>
+    /// Logs a closed-connection summary for every tracked connection and clears state.
+    /// Called when the NinjaOne process disappears entirely between polls.
+    /// </summary>
+    private void LogAndClearAllSnapshots()
+    {
+        foreach (var (sig, snap) in _byteSnapshots)
+            _logger.LogConnectionClosed(
+                snap.ProcessName, snap.Pid, sig,
+                snap.TotalBytesIn, snap.TotalBytesOut, snap.FirstSeen);
+        _byteSnapshots.Clear();
     }
 
     /// <summary>

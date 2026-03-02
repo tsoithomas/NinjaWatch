@@ -25,5 +25,20 @@ public class AppConfig
         "NinjaRMMAgent",
         "NinjaRMMAgent.exe"
     ];
+
+    /// <summary>
+    /// Track bytes sent and received per connection using GetPerTcpConnectionEStats.
+    /// Logs a data-transfer entry each poll cycle when bytes have moved, and a
+    /// connection-closed summary when the connection disappears.
+    /// Requires administrator privileges; silently disabled if not elevated.
+    /// </summary>
+    public bool EnableByteTracking { get; set; } = true;
+
+    /// <summary>
+    /// Print byte-transfer deltas to the console on each poll cycle.
+    /// Only takes effect when both <see cref="EnableByteTracking"/> and
+    /// <see cref="EnableConsoleAlerts"/> are also true.
+    /// </summary>
+    public bool EnableConsoleByteAlerts { get; set; } = false;
 }
 
